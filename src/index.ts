@@ -1,15 +1,24 @@
 /**
  * opencode-qiwei — OpenCode 企业微信桥接
  * 
- * 架构参考 opencode-feishu，适配企业微信 HTTP 回调模式：
- * - 飞书用 WebSocket 长连接 → 企微用 HTTP 回调 URL
- * - 企微消息需加解密（AES + SHA1 签名）
- * - 企微用 corpid + corpsecret 认证
- * - 支持智能机器人长连接模式（WebSocket）
+ * @neomei/opencode-qiwei
+ * 
+ * 使用方式：
+ *   独立运行: npx opencode-qiwei start
+ *   插件模式: 添加到 ~/.config/opencode/opencode.jsonc 的 plugin 列表
  */
 
 export { WecomConfig } from './core/types.js';
 export { ConfigManager } from './core/config.js';
-export { WecomAPI } from './wecom/api.js';
+export { SessionManager } from './core/session-manager.js';
 export { MessageHandler } from './core/message-handler.js';
+export { TemplateCardManager } from './core/template-card-manager.js';
+export { MediaHandler } from './core/media-handler.js';
+export { GroupPolicy } from './core/group-policy.js';
+export { OpenCodeClient } from './opencode/client.js';
+export { OpenCodeEventHandler } from './opencode/event-handler.js';
 export { startStandalone } from './standalone.js';
+
+import QiweiPlugin from './plugin.js';
+export { QiweiPlugin };
+export default QiweiPlugin;
