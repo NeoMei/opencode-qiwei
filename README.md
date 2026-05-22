@@ -16,17 +16,15 @@ npm install -g @neomei/opencode-qiwei
 
 ## 配置
 
-```json
-// ~/.config/opencode/qiwei.json
+```bash
+# 交互式配置向导
+opencode-qiwei setup
+
+# 或手动创建 ~/.config/opencode/qiwei.json
 {
   "botId": "your-bot-id",
-  "corpSecret": "your-secret",
-  "agentId": 1000001,
-  "token": "your-token",
-  "encodingAESKey": "your-43-char-aes-key",
+  "secret": "your-bot-secret",
   "opencodeUrl": "http://localhost:19876",
-  "streaming": true,
-  "showProcess": "tools",
   "autoApprove": true
 }
 ```
@@ -34,5 +32,34 @@ npm install -g @neomei/opencode-qiwei
 ## 使用
 
 ```bash
-opencode-qiwei start
+opencode-qiwei doctor     # 连接预检
+opencode-qiwei start      # 启动桥接
+opencode-qiwei status     # 查看版本
 ```
+
+## 与 AgentSoul（魂器）集成
+
+将 opencode-qiwei 与魂器项目一起使用：
+
+```json
+// ~/.config/opencode/opencode.jsonc
+{
+  "plugin": [
+    "/path/to/agent-soul-framework/plugin",
+    "@neomei/opencode-feishu",
+    "@neomei/opencode-qiwei"
+  ]
+}
+```
+
+这样点点可以同时接入飞书和企业微信，两个 channel 共享同一个灵魂和记忆。
+
+## 架构
+
+```
+企业微信用户 → 企微 WebSocket → opencode-qiwei → OpenCode serve → LLM
+                                                      ↑
+                                               魂器插件注入灵魂
+```
+
+对照 opencode-feishu 架构，替换飞书 SDK 为企业微信 `@wecom/aibot-node-sdk`

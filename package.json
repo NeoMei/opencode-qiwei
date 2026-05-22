@@ -1,6 +1,6 @@
 {
   "name": "@neomei/opencode-qiwei",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenCode 企业微信桥接 — 让 OpenCode 接入企业微信",
   "type": "module",
   "main": "dist/index.js",
@@ -10,7 +10,9 @@
   "files": [
     "dist",
     "bin",
-    "README.md"
+    "scripts",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",

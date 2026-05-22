@@ -72,12 +72,18 @@ export class MessageHandler {
     }
 
     try {
-      // 流式 ID
       const streamId = `s_${Date.now()}`;
-      this.streams.set(newSession.id, { frame, streamId, lastContent: '' });
+      await this.wsClient.replyStream(frame, streamId, '...', false);
 
-      // 发送 prompt 到 OpenCode（流式输出由 event-handler 处理）
-      await this.opencode.sendPrompt(newSession.opencodeId, text);
+      // 调用 OpenCode API 并等待同步回复
+      const response = await this.opencode.sendPrompt(newSession.opencodeId!, text);
+      const reply = response?.parts?.find((p: any) => p.type === 'text')?.text || '';
+      
+      if (reply) {
+        await this.wsClient.replyStream(frame, streamId, reply, true);
+      } else {
+        await this.wsClient.replyStream(frame, streamId, '抱歉，处理出错了 😢', true);
+      }
     } catch (err) {
       log.error('消息处理失败', { err });
       await this.wsClient.replyStream(frame, `e_${Date.now()}`, '抱歉，处理出错了 😢', true);
