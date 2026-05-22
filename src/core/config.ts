@@ -5,6 +5,8 @@ import { homedir } from 'os';
 import type { WecomConfig } from './types.js';
 
 const WecomConfigSchema = z.object({
+  botId: z.string().min(1),
+  secret: z.string().min(1),
   corpId: z.string().min(1),
   corpSecret: z.string().min(1),
   agentId: z.number().int().positive(),

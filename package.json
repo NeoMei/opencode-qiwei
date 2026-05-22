@@ -18,17 +18,24 @@
     "clean": "rm -rf dist",
     "prebuild": "npm run clean"
   },
-  "keywords": ["opencode", "plugin", "wecom", "企业微信", "ai"],
+  "keywords": [
+    "opencode",
+    "plugin",
+    "wecom",
+    "企业微信",
+    "ai"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/NeoMei/opencode-qiwei.git"
   },
   "license": "MIT",
   "dependencies": {
+    "@wecom/aibot-node-sdk": "^1.0.7",
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@types/node": "^20.0.0"
+    "@types/node": "^20.19.41",
+    "typescript": "^5.9.3"
   }
 }

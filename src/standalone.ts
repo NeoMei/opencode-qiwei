@@ -53,16 +53,16 @@ export async function startStandalone(options: { configPath?: string } = {}) {
 
     // 后台启动 SSE 监听
     opencode.subscribeEvents().then(stream => {
-      eventHandler!.start(stream).catch(err => log.error({ err }, 'SSE error'));
-    }).catch(err => log.warn({ err }, 'SSE 连接失败'));
+      eventHandler!.start(stream).catch(err => log.error('SSE error', { err }));
+    }).catch(err => log.warn('SSE 连接失败'));
   }
 
   // 7. 消息监听
-  wsClient.on('message.text', frame => messageHandler.handleMessage(frame).catch(e => log.error({ e }, 'text')));
-  wsClient.on('message.image', frame => messageHandler.handleImageMessage(frame).catch(e => log.error({ e }, 'image')));
-  wsClient.on('message.mixed', frame => messageHandler.handleMixedMessage(frame).catch(e => log.error({ e }, 'mixed')));
-  wsClient.on('event.enter_chat', frame => messageHandler.handleEnterChat(frame).catch(e => log.error({ e }, 'enter')));
-  wsClient.on('event.template_card_event', frame => messageHandler.handleCardEvent(frame).catch(e => log.error({ e }, 'card')));
+  wsClient.on('message.text', frame => messageHandler.handleMessage(frame).catch(e => log.error('text')));
+  wsClient.on('message.image', frame => messageHandler.handleImageMessage(frame).catch(e => log.error('image')));
+  wsClient.on('message.mixed', frame => messageHandler.handleMixedMessage(frame).catch(e => log.error('mixed')));
+  wsClient.on('event.enter_chat', frame => messageHandler.handleEnterChat(frame).catch(e => log.error('enter')));
+  wsClient.on('event.template_card_event', frame => messageHandler.handleCardEvent(frame).catch(e => log.error('card')));
 
   wsClient.on('connected', () => log.info('🔗 WebSocket 已连接'));
   wsClient.on('authenticated', () => console.log('✅ 企业微信认证成功\n'));

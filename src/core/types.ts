@@ -1,14 +1,18 @@
 /** 企业微信配置类型 */
 export interface WecomConfig {
-  /** 企业ID */
+  /** 智能机器人 ID */
+  botId: string;
+  /** 智能机器人 Secret */
+  secret: string;
+  /** 企业ID (corpId) */
   corpId: string;
-  /** 应用Secret */
+  /** 应用Secret (corpSecret) */
   corpSecret: string;
   /** 应用AgentId */
   agentId: number;
   /** Token（回调验证） */
   token: string;
-  /** EncodingAESKey（消息加解密） */
+  /** EncodingAESKey（消息加解密, 43字符） */
   encodingAESKey: string;
   /** OpenCode 服务地址 */
   opencodeUrl: string;
