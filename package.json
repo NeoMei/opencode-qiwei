@@ -16,7 +16,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
-    "prebuild": "npm run clean"
+    "prebuild": "npm run clean",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "opencode",
