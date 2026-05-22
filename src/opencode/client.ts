@@ -40,13 +40,13 @@ export class OpenCodeClient {
 
   /** 列出 sessions */
   async listSessions(): Promise<any[]> {
-    const res = await fetch(`${this.baseUrl}/api/sessions`);
+    const res = await fetch(`${this.baseUrl}/session`);
     return res.json();
   }
 
   /** 订阅 SSE 事件 */
   async subscribeEvents(): Promise<ReadableStream<Uint8Array>> {
-    const res = await fetch(`${this.baseUrl}/session/events`, {
+    const res = await fetch(`${this.baseUrl}/global/event`, {
       headers: { Accept: 'text/event-stream' },
     });
     if (!res.ok || !res.body) throw new Error('SSE connection failed');
@@ -61,5 +61,15 @@ export class OpenCodeClient {
       body: JSON.stringify({ reply }),
     });
     if (!res.ok) throw new Error(`Permission reply failed: ${res.status}`);
+  }
+
+  /** 回复问题 */
+  async replyQuestion(requestID: string, answers: string[][]): Promise<void> {
+    const res = await fetch(`${this.baseUrl}/question/${requestID}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers }),
+    });
+    if (!res.ok) throw new Error(`Question reply failed: ${res.status}`);
   }
 }

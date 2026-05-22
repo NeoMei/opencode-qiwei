@@ -3,7 +3,7 @@
  */
 
 import type { WsFrame, TextMessage, ImageMessage, MixedMessage, WSClient } from '@wecom/aibot-node-sdk';
-import type { WecomConfig } from './types.js';
+import type { WecomConfig, PendingInteraction } from './types.js';
 import { SessionManager } from './session-manager.js';
 import { OpenCodeClient } from '../opencode/client.js';
 import { createLogger } from './logger.js';
@@ -31,19 +31,38 @@ export class MessageHandler {
     if (!text.trim()) return;
     log.info(`📩 ${chatId}(${chatType}): "${text.slice(0, 80)}"`);
 
-    if (this.sessionManager.isBusy(chatId)) {
-      log.info(`⏳ ${chatId} 忙碌中`);
+    const session = this.sessionManager.getByChatId(chatId);
+
+    // 如果有挂起的交互（question/permission），优先尝试作为回复处理
+    if (session?.pendingInteraction) {
+      const handled = await this.handleInteractionReply(chatId, text.trim(), session.pendingInteraction);
+      if (handled) return;
+      // 不是有效回复格式，提示用户先处理交互
+      await this.wsClient.replyStream(frame, `e_${Date.now()}`,
+        session.pendingInteraction.kind === 'permission'
+          ? '⏳ 请先处理上方的权限请求（回复「确认」/「始终」/「拒绝」），或等待当前任务完成。'
+          : '⏳ 请先回复上方的提问，或等待当前任务完成。',
+        true
+      );
       return;
     }
 
-    const session = this.sessionManager.getOrCreate(chatId, chatType);
+    // 检查是否忙碌（排除有挂起交互的情况）
+    if (this.sessionManager.isBusy(chatId)) {
+      log.info(`⏳ ${chatId} 忙碌中`);
+      await this.wsClient.replyStream(frame, `e_${Date.now()}`, '⏳ 正在处理上一条消息，请稍候...', true);
+      return;
+    }
+
+    const newSession = this.sessionManager.getOrCreate(chatId, chatType);
     this.sessionManager.setStatus(chatId, 'busy');
 
     // 创建 OpenCode 会话（如果还没有）
-    if (!session.opencodeId) {
+    if (!newSession.opencodeId) {
       try {
         const oc = await this.opencode.createSession(`企微-${chatId.slice(0, 8)}`);
-        session.opencodeId = oc.id;
+        newSession.opencodeId = oc.id;
+        this.sessionManager.setOpenCodeId(newSession.id, oc.id);
       } catch (err) {
         log.error('创建 OpenCode 会话失败', { err });
         await this.wsClient.replyStream(frame, `e_${Date.now()}`, '服务暂时不可用，请稍后再试 😢', true);
@@ -55,15 +74,140 @@ export class MessageHandler {
     try {
       // 流式 ID
       const streamId = `s_${Date.now()}`;
-      this.streams.set(session.id, { frame, streamId, lastContent: '' });
+      this.streams.set(newSession.id, { frame, streamId, lastContent: '' });
 
       // 发送 prompt 到 OpenCode（流式输出由 event-handler 处理）
-      await this.opencode.sendPrompt(session.opencodeId, text);
+      await this.opencode.sendPrompt(newSession.opencodeId, text);
     } catch (err) {
       log.error('消息处理失败', { err });
       await this.wsClient.replyStream(frame, `e_${Date.now()}`, '抱歉，处理出错了 😢', true);
-      this.streams.delete(session.id);
+      this.streams.delete(newSession.id);
       this.sessionManager.setStatus(chatId, 'idle');
+    }
+  }
+
+  /**
+   * 尝试将用户消息解析为挂起交互的回复。
+   * 返回 true 表示已处理。
+   */
+  private async handleInteractionReply(
+    chatId: string,
+    text: string,
+    interaction: PendingInteraction,
+  ): Promise<boolean> {
+    try {
+      if (interaction.kind === 'permission') {
+        const perm = interaction.data;
+        let reply: 'once' | 'always' | 'reject' | undefined;
+
+        if (text === '确认' || text === '同意' || text === '允许' || text === 'yes' || text === 'y') {
+          reply = 'once';
+        } else if (text === '始终' || text === '总是' || text === 'always') {
+          reply = 'always';
+        } else if (text === '拒绝' || text === '否' || text === '不同意' || text === 'no' || text === 'n') {
+          reply = 'reject';
+        }
+
+        if (!reply) return false;
+
+        log.info('Replying to permission via text', { chatId, permissionId: perm.id, reply });
+        await this.opencode.replyPermission(perm.id, reply);
+        this.sessionManager.clearPendingInteraction(chatId);
+        this.sessionManager.setStatus(chatId, 'busy'); // AI 会继续输出
+
+        // 发送确认给用户
+        const stream = this.streams.get(this.sessionManager.getByChatId(chatId)?.id || '');
+        const confirmText = reply === 'reject'
+          ? '已拒绝该权限请求。'
+          : reply === 'always'
+            ? '已永久授权该权限。'
+            : '已授权一次该权限。';
+        if (stream) {
+          await this.wsClient.replyStream(stream.frame, `e_${Date.now()}`, confirmText, true);
+        }
+        return true;
+      }
+
+      if (interaction.kind === 'question') {
+        const q = interaction.data;
+        // 解析答案：逗号、空格或换行分隔的序号/标签
+        const selections = text.split(/[,，\s]+/).filter(s => s.length > 0);
+        if (selections.length === 0) return false;
+
+        const answers: string[][] = [];
+        for (const [qIdx, question] of q.questions.entries()) {
+          const answer: string[] = [];
+          for (const sel of selections) {
+            // 尝试数字序号
+            const idx = parseInt(sel, 10);
+            if (!isNaN(idx) && idx >= 1 && idx <= question.options.length) {
+              answer.push(question.options[idx - 1].label);
+            } else {
+              // 尝试匹配标签
+              const match = question.options.find(o =>
+                o.label === sel || o.label.toLowerCase() === sel.toLowerCase(),
+              );
+              if (match) answer.push(match.label);
+            }
+          }
+          // 去重
+          const unique = [...new Set(answer)];
+          if (unique.length > 0) {
+            answers.push(unique);
+          } else if (qIdx < q.questions.length - 1) {
+            answers.push([]);
+          }
+        }
+
+        // 如果问题允许自定义输入且没有匹配到选项，将整个文本作为答案
+        const hasCustom = q.questions.some(q => q.custom);
+        if ((answers.length === 0 || answers.every(a => a.length === 0)) && hasCustom) {
+          answers.push([text.trim()]);
+        }
+
+        if (answers.length === 0 || answers.every(a => a.length === 0)) {
+          return false;
+        }
+
+        log.info('Replying to question via text', { chatId, requestId: q.id, answers });
+        await this.opencode.replyQuestion(q.id, answers);
+        this.sessionManager.clearPendingInteraction(chatId);
+        this.sessionManager.setStatus(chatId, 'busy'); // AI 会继续输出
+
+        const label = answers.map(a => a.join(', ')).join('; ');
+        const stream = this.streams.get(this.sessionManager.getByChatId(chatId)?.id || '');
+        if (stream) {
+          await this.wsClient.replyStream(stream.frame, `e_${Date.now()}`, `已提交：${label}`, true);
+        }
+        return true;
+      }
+
+      return false;
+    } catch (err) {
+      log.error('Failed to handle interaction reply', { err, chatId, interactionKind: interaction.kind });
+      this.sessionManager.clearPendingInteraction(chatId);
+      return false;
+    }
+  }
+
+  /** 通知用户有挂起的交互（由 EventHandler 调用） */
+  async notifyPending(chatId: string, message: string): Promise<void> {
+    const session = this.sessionManager.getByChatId(chatId);
+    if (!session) return;
+
+    // 复用当前 stream 的 frame，如果没有则找一个
+    let frame = this.streams.get(session.id)?.frame;
+    if (!frame) {
+      // 没有活跃流，创建一个最小 frame 用于回复
+      // 注意：企微 SDK 可能不支持没有原始 frame 的回复，这里仅作兜底
+      log.warn('No active stream frame for notifyPending, message may not be delivered');
+      return;
+    }
+
+    try {
+      await this.wsClient.replyStream(frame, `e_${Date.now()}`, message, true);
+    } catch (err) {
+      log.error('Failed to send pending notification', { err });
     }
   }
 

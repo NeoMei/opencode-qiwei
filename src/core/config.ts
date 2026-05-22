@@ -7,11 +7,11 @@ import type { WecomConfig } from './types.js';
 const WecomConfigSchema = z.object({
   botId: z.string().min(1),
   secret: z.string().min(1),
-  corpId: z.string().min(1),
-  corpSecret: z.string().min(1),
-  agentId: z.number().int().positive(),
-  token: z.string().min(1),
-  encodingAESKey: z.string().length(43),
+  corpId: z.string().optional().default(''),
+  corpSecret: z.string().optional().default(''),
+  agentId: z.number().int().positive().optional().default(1000001),
+  token: z.string().optional().default(''),
+  encodingAESKey: z.string().optional().default(''),
   opencodeUrl: z.string().url().default('http://localhost:19876'),
   streaming: z.boolean().default(true),
   requireMention: z.boolean().default(true),
@@ -19,6 +19,8 @@ const WecomConfigSchema = z.object({
   allowlist: z.array(z.string()).optional(),
   showProcess: z.enum(['none', 'tools', 'thinking', 'full']).default('tools'),
   autoApprove: z.boolean().default(false),
+  scene: z.number().int().optional(),
+  plugVersion: z.string().optional(),
 });
 
 const DEFAULT_CONFIG_PATH = join(homedir(), '.config', 'opencode', 'qiwei.json');

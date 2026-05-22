@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from './logger.js';
+import type { PendingInteraction } from './types.js';
 
 const log = createLogger('SessionManager');
 
@@ -14,6 +15,7 @@ interface Session {
   chatType: 'single' | 'group';
   status: 'idle' | 'busy';
   lastActivity: number;
+  pendingInteraction?: PendingInteraction;
 }
 
 export class SessionManager {
@@ -64,6 +66,20 @@ export class SessionManager {
 
   isBusy(chatId: string): boolean {
     return this.getByChatId(chatId)?.status === 'busy';
+  }
+
+  getPendingInteraction(chatId: string): PendingInteraction | undefined {
+    return this.getByChatId(chatId)?.pendingInteraction;
+  }
+
+  setPendingInteraction(chatId: string, interaction: PendingInteraction): void {
+    const session = this.getByChatId(chatId);
+    if (session) session.pendingInteraction = interaction;
+  }
+
+  clearPendingInteraction(chatId: string): void {
+    const session = this.getByChatId(chatId);
+    if (session) session.pendingInteraction = undefined;
   }
 
   /** 清理过期会话 (1小时无活动) */

@@ -35,13 +35,21 @@ export async function startStandalone(options: { configPath?: string } = {}) {
 
   // 4. 企微 WebSocket
   console.log('📡 连接企业微信 WebSocket...');
-  const wsClient = new WSClient({
+  const wsClientOptions: any = {
     botId: config.botId,
-    secret: config.corpSecret,
+    secret: config.secret,
     reconnectInterval: 2000,
     maxReconnectAttempts: -1,
     heartbeatInterval: 30000,
-  });
+  };
+  // 企业微信后台可能要求 scene 和 plug_version 才能通过认证
+  if (config.scene !== undefined) {
+    wsClientOptions.scene = config.scene;
+  }
+  if (config.plugVersion) {
+    wsClientOptions.plug_version = config.plugVersion;
+  }
+  const wsClient = new WSClient(wsClientOptions);
 
   // 5. 消息处理
   const messageHandler = new MessageHandler(config, sessionManager, wsClient, opencode);

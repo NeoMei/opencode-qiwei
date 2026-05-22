@@ -35,7 +35,7 @@ export default function QiweiPlugin(_ctx: any) {
 
         wsClient = new WSClient({
           botId: config.botId,
-          secret: config.corpSecret,
+          secret: config.secret,
           reconnectInterval: 2000,
           maxReconnectAttempts: -1,
         });

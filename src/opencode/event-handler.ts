@@ -1,16 +1,18 @@
 /**
  * OpenCode SSE 事件处理器
- * 
+ *
  * 解析 OpenCode serve 的 SSE 流，桥接到企微：
  * - text delta → MessageHandler.pushStreamDelta()
  * - step-finish → MessageHandler.finishStream()
- * - permission.asked → 自动批准
+ * - permission.asked → 通知用户（或自动批准）
+ * - question.asked → 通知用户等待回复
  */
 
 import { SessionManager } from '../core/session-manager.js';
 import { MessageHandler } from '../core/message-handler.js';
 import { OpenCodeClient } from './client.js';
 import { createLogger } from '../core/logger.js';
+import type { PendingInteraction } from '../core/types.js';
 
 const log = createLogger('EventHandler');
 
@@ -82,12 +84,95 @@ export class OpenCodeEventHandler {
       return;
     }
 
-    // 权限请求 → 自动批准
-    if ((evt.type === 'permission.asked' || evt.type === 'permission.updated') && this.autoApprove) {
+    // 权限请求
+    if (evt.type === 'permission.asked' || evt.type === 'permission.updated') {
       const permId = evt.id || evt.permissionID || '';
-      if (permId) {
+      const session = this.sessionManager.getByOpenCodeId(evt.sessionID || '');
+
+      if (this.autoApprove && permId) {
         log.info(`自动批准: ${permId}`);
         this.opencode.replyPermission(permId, 'always').catch(() => {});
+        return;
+      }
+
+      if (session) {
+        const interaction: PendingInteraction = {
+          kind: 'permission',
+          data: {
+            id: permId,
+            permission: evt.permission || evt.type || 'unknown',
+            patterns: evt.patterns || (evt.pattern ? [evt.pattern] : []),
+            title: evt.title || `${evt.permission}: ${(evt.patterns || []).join(', ')}`,
+          },
+        };
+        this.sessionManager.setPendingInteraction(session.chatId, interaction);
+        await this.messageHandler.notifyPending(session.chatId,
+          `🔐 权限请求：${interaction.data.title}\n\n` +
+          `请回复「确认」授权一次，或「始终」永久授权，或「拒绝」拒绝该请求。`
+        );
+      }
+      return;
+    }
+
+    // 权限已回复
+    if (evt.type === 'permission.replied') {
+      const session = this.sessionManager.getByOpenCodeId(evt.sessionID || '');
+      if (session) {
+        this.sessionManager.clearPendingInteraction(session.chatId);
+      }
+      return;
+    }
+
+    // 问题提问
+    if (evt.type === 'question.asked') {
+      const session = this.sessionManager.getByOpenCodeId(evt.sessionID || '');
+      if (!session) return;
+
+      const rawQuestions = evt.questions || [];
+      const questions = rawQuestions.map((q: any) => ({
+        question: q.question || '',
+        header: q.header || q.question?.substring(0, 30) || '',
+        options: (q.options || []).map((o: any) => ({
+          label: o.label || '',
+          description: o.description || '',
+        })),
+        multiple: !!q.multiple,
+        custom: q.custom !== false,
+      }));
+
+      const interaction: PendingInteraction = {
+        kind: 'question',
+        data: {
+          id: evt.id || evt.requestID || '',
+          questions,
+        },
+      };
+
+      this.sessionManager.setPendingInteraction(session.chatId, interaction);
+
+      // 构建提示文本
+      let prompt = '❓ 需要你提供信息：\n\n';
+      for (const [idx, q] of questions.entries()) {
+        prompt += `${idx + 1}. ${q.question}\n`;
+        if (q.options.length > 0) {
+          prompt += '选项：' + q.options.map((o: { label: string }, i: number) => `${i + 1}.${o.label}`).join(' ') + '\n';
+        }
+        if (q.custom) {
+          prompt += '(也支持直接回复文字)\n';
+        }
+        prompt += '\n';
+      }
+      prompt += '请直接回复对应选项编号或内容。';
+
+      await this.messageHandler.notifyPending(session.chatId, prompt);
+      return;
+    }
+
+    // 问题已回复
+    if (evt.type === 'question.replied' || evt.type === 'question.rejected') {
+      const session = this.sessionManager.getByOpenCodeId(evt.sessionID || '');
+      if (session) {
+        this.sessionManager.clearPendingInteraction(session.chatId);
       }
       return;
     }
