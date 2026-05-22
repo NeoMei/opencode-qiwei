@@ -1,41 +1,26 @@
 /**
  * OpenCode SSE 事件处理器
  * 
- * 处理 OpenCode serve 的 Server-Sent Events：
- * - text delta → 流式推送到企微
- * - permission.asked → 自动批准（如启用 autoApprove）
- * - session.idle → 清理状态
+ * 解析 OpenCode serve 的 SSE 流，桥接到企微：
+ * - text delta → MessageHandler.pushStreamDelta()
+ * - step-finish → MessageHandler.finishStream()
+ * - permission.asked → 自动批准
  */
 
-import type { WSClient, StreamReplyBody } from '@wecom/aibot-node-sdk';
 import { SessionManager } from '../core/session-manager.js';
+import { MessageHandler } from '../core/message-handler.js';
 import { OpenCodeClient } from './client.js';
 import { createLogger } from '../core/logger.js';
 
 const log = createLogger('EventHandler');
-
-interface SSEData {
-  type?: string;
-  field?: string;
-  text?: string;
-  delta?: string;
-  partID?: string;
-  sessionID?: string;
-  permission?: string;
-  patterns?: string[];
-  id?: string;
-  permissionID?: string;
-  reply?: string;
-}
 
 export class OpenCodeEventHandler {
   private isRunning = false;
 
   constructor(
     private sessionManager: SessionManager,
-    private wsClient: WSClient,
+    private messageHandler: MessageHandler,
     private opencodeUrl: string,
-    private showProcess: string = 'tools',
     private autoApprove: boolean = false,
     private opencode: OpenCodeClient,
   ) {}
@@ -54,63 +39,58 @@ export class OpenCodeEventHandler {
         buffer += decoder.decode(value, { stream: true });
 
         while (buffer.includes('\n\n')) {
-          const eventEnd = buffer.indexOf('\n\n');
-          const eventStr = buffer.slice(0, eventEnd);
-          buffer = buffer.slice(eventEnd + 2);
+          const idx = buffer.indexOf('\n\n');
+          const raw = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
 
-          const data = this.parseSSE(eventStr);
-          if (!data) continue;
-
-          await this.handleEvent(data, data.sessionID || '');
+          await this.processEvent(raw);
         }
       }
     } catch (err) {
-      log.error('SSE stream error', { err });
+      log.error('SSE error', { err });
     }
   }
 
-  private parseSSE(raw: string): SSEData | null {
-    const event: any = {};
+  private async processEvent(raw: string) {
+    let type = '';
+    let data: any = {};
+
     for (const line of raw.split('\n')) {
-      if (line.startsWith('event:')) event.type = line.slice(6).trim();
-      else if (line.startsWith('data:')) {
-        try { event.data = JSON.parse(line.slice(5).trim()); } catch {}
+      if (line.startsWith('event:')) type = line.slice(6).trim();
+      if (line.startsWith('data:')) {
+        try { data = JSON.parse(line.slice(5).trim()); } catch {}
       }
     }
-    return { ...event.data, type: event.type };
-  }
 
-  private async handleEvent(data: SSEData, sessionId: string) {
-    const type = data.type || '';
+    // 合并顶层字段
+    const evt = { ...data, type: type || data.type };
 
-    // 文本增量 → 流式推送到企微
-    if (type === 'text' || data.field === 'text' || data.field === 'delta') {
-      await this.handleTextDelta(data);
+    // 文本增量
+    if (evt.type === 'text' || evt.field === 'text') {
+      const delta = evt.text || evt.delta || '';
+      if (delta) {
+        const session = this.sessionManager.getByOpenCodeId(evt.sessionID || '');
+        if (session) await this.messageHandler.pushStreamDelta(session.id, delta);
+      }
+      return;
+    }
+
+    // 流式结束
+    if (evt.type === 'step-finish' || evt.reason === 'stop') {
+      const session = this.sessionManager.getByOpenCodeId(evt.sessionID || '');
+      if (session) await this.messageHandler.finishStream(session.id);
       return;
     }
 
     // 权限请求 → 自动批准
-    if (type === 'permission.asked' && this.autoApprove) {
-      const permId = data.id || data.permissionID || '';
+    if ((evt.type === 'permission.asked' || evt.type === 'permission.updated') && this.autoApprove) {
+      const permId = evt.id || evt.permissionID || '';
       if (permId) {
-        log.info(`自动批准权限: ${permId}`);
-        await this.opencode.replyPermission(permId, 'always').catch(() => {});
+        log.info(`自动批准: ${permId}`);
+        this.opencode.replyPermission(permId, 'always').catch(() => {});
       }
       return;
     }
-
-    // 会话空闲 → 清理
-    if (type === 'session.idle') {
-      const chatId = data.sessionID || '';
-      this.sessionManager.setStatus(chatId, 'idle');
-    }
-  }
-
-  private async handleTextDelta(data: SSEData) {
-    const sessionId = data.sessionID || '';
-    // 通过 sessionManager 获取对应的 chatId
-    // 由于会话映射关系，需要通过 OpenCode sessionId 找到对应的企微 chatId
-    // 这里简化处理：直接发送到最近活跃的会话
   }
 
   stop() {

@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+/**
+ * opencode-qiwei CLI 入口
+ * 
+ * 命令：
+ *   opencode-qiwei start       启动桥接
+ *   opencode-qiwei setup       配置向导
+ *   opencode-qiwei status      查看状态
+ */
+
+import { startStandalone } from '../dist/standalone.js';
+
+const cmd = process.argv[2] || 'start';
+
+async function main() {
+  switch (cmd) {
+    case 'start':
+      await startStandalone();
+      break;
+    case 'setup':
+      console.log('📋 配置向导 — 请在企业微信后台获取以下信息：');
+      console.log('  1. 智能机器人 → botId + secret');
+      console.log('  2. 保存到 ~/.config/opencode/qiwei.json');
+      console.log('\n配置格式参考 README.md');
+      break;
+    case 'status':
+      console.log('opencode-qiwei v0.1.0');
+      break;
+    default:
+      console.log(`用法: opencode-qiwei <start|setup|status>`);
+  }
+}
+
+main().catch(err => {
+  console.error('启动失败:', err.message);
+  process.exit(1);
+});
