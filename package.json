@@ -1,0 +1,34 @@
+{
+  "name": "@neomei/opencode-qiwei",
+  "version": "0.1.0",
+  "description": "OpenCode 企业微信桥接 — 让 OpenCode 接入企业微信",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "opencode-qiwei": "bin/opencode-qiwei"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean"
+  },
+  "keywords": ["opencode", "plugin", "wecom", "企业微信", "ai"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NeoMei/opencode-qiwei.git"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0"
+  }
+}
