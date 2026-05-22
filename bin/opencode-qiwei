@@ -1,37 +1,96 @@
 #!/usr/bin/env node
 /**
- * opencode-qiwei CLI 入口
- * 
- * 命令：
- *   opencode-qiwei start       启动桥接
- *   opencode-qiwei setup       配置向导
- *   opencode-qiwei status      查看状态
+ * opencode-qiwei CLI — 企业微信桥接命令行工具
  */
 
 import { startStandalone } from '../dist/standalone.js';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+import { createInterface } from 'readline';
 
-const cmd = process.argv[2] || 'start';
+const QIWEI_CONFIG = join(homedir(), '.config', 'opencode', 'qiwei.json');
+
+async function runSetup() {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const ask = (q) => new Promise(r => rl.question(q, r));
+
+  console.log('\n📋 企业微信智能机器人配置向导\n');
+  console.log('请在企业微信管理后台获取以下信息：');
+  console.log('  应用管理 → 智能机器人 → 接收消息\n');
+
+  const botId = await ask('机器人 ID (botId): ');
+  const secret = await ask('机器人 Secret: ');
+
+  rl.close();
+
+  const config = {
+    botId: botId.trim(),
+    secret: secret.trim(),
+    corpId: 'placeholder',
+    corpSecret: 'placeholder',
+    agentId: 1000001,
+    token: 'placeholder-token',
+    encodingAESKey: 'placeholder-aes-key-43-characters-here',
+    opencodeUrl: 'http://localhost:19876',
+    streaming: true,
+    requireMention: true,
+    groupPolicy: 'open',
+    showProcess: 'tools',
+    autoApprove: true,
+  };
+
+  mkdirSync(join(homedir(), '.config', 'opencode'), { recursive: true });
+  writeFileSync(QIWEI_CONFIG, JSON.stringify(config, null, 2));
+  console.log(`\n✅ 配置已保存到 ${QIWEI_CONFIG}`);
+  console.log('现在可以运行 opencode-qiwei start 启动桥接\n');
+}
+
+async function runDoctor() {
+  console.log('\n🔍 opencode-qiwei 连接预检\n');
+
+  if (!existsSync(QIWEI_CONFIG)) {
+    console.log('❌ 配置文件不存在');
+    console.log('   运行 opencode-qiwei setup 创建配置\n');
+    process.exit(1);
+  }
+
+  const config = JSON.parse(readFileSync(QIWEI_CONFIG, 'utf-8'));
+
+  console.log(`✅ 配置文件: ${QIWEI_CONFIG}`);
+  console.log(`   botId: ${config.botId}`);
+  console.log(`   OpenCode: ${config.opencodeUrl}`);
+
+  try {
+    const res = await fetch(config.opencodeUrl);
+    console.log(`✅ OpenCode 可达 (${res.status})`);
+  } catch {
+    console.log('❌ OpenCode 不可达');
+  }
+
+  try {
+    await import('@wecom/aibot-node-sdk');
+    console.log('✅ 企业微信 SDK 已加载');
+  } catch (e) {
+    console.log(`❌ SDK 加载失败: ${e.message}`);
+  }
+
+  console.log('');
+}
 
 async function main() {
-  switch (cmd) {
-    case 'start':
-      await startStandalone();
-      break;
-    case 'setup':
-      console.log('📋 配置向导 — 请在企业微信后台获取以下信息：');
-      console.log('  1. 智能机器人 → botId + secret');
-      console.log('  2. 保存到 ~/.config/opencode/qiwei.json');
-      console.log('\n配置格式参考 README.md');
-      break;
-    case 'status':
-      console.log('opencode-qiwei v0.1.0');
-      break;
-    default:
-      console.log(`用法: opencode-qiwei <start|setup|status>`);
+  const cmd = process.argv[2] || 'start';
+
+  try {
+    if (cmd === 'setup') return await runSetup();
+    if (cmd === 'doctor') return await runDoctor();
+    if (cmd === 'status') { console.log('opencode-qiwei v0.1.0'); return; }
+    if (cmd === 'start') return await startStandalone();
+    console.log('用法: opencode-qiwei <start|setup|doctor|status>');
+  } catch (err) {
+    console.error('错误:', err.message);
+    process.exit(1);
   }
 }
 
-main().catch(err => {
-  console.error('启动失败:', err.message);
-  process.exit(1);
-});
+main();
