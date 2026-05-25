@@ -59,10 +59,14 @@ export async function startStandalone(options: { configPath?: string } = {}) {
   if (config.streaming) {
     eventHandler = new OpenCodeEventHandler(sessionManager, messageHandler, config.opencodeUrl, config.autoApprove, opencode);
 
-    // 后台启动 SSE 监听
+    // 启动 SSE 监听（带自动重连）
     opencode.subscribeEvents().then(stream => {
       eventHandler!.start(stream).catch(err => log.error('SSE error', { err }));
-    }).catch(err => log.warn('SSE 连接失败'));
+    }).catch(err => {
+      log.warn('SSE 初始连接失败，event handler 将自动重试', { err });
+      // 即使初始连接失败，也启动 event handler，让它自己重连
+      eventHandler!.start(new ReadableStream()).catch(() => {});
+    });
   }
 
   // 7. 消息监听
@@ -87,8 +91,24 @@ export async function startStandalone(options: { configPath?: string } = {}) {
   console.log(`║  流式:     ${(config.streaming ? 'Markdown 实时推送' : '禁用').padEnd(36)} ║`);
   console.log('╚════════════════════════════════════════════════╝\n');
 
-  // 9. 退出
-  const cleanup = () => { wsClient.disconnect(); eventHandler?.stop(); process.exit(0); };
+  // 9. 全局错误处理（防止未捕获异常导致进程崩溃）
+  process.on('uncaughtException', (err) => {
+    log.error('未捕获的异常', { err: err.message, stack: err.stack });
+    // 不立即退出，给日志写入时间
+    setTimeout(() => process.exit(1), 1000);
+  });
+  process.on('unhandledRejection', (reason, promise) => {
+    log.error('未处理的 Promise 拒绝', { reason });
+  });
+
+  // 10. 退出
+  const cleanup = () => {
+    log.info('正在关闭连接...');
+    wsClient.disconnect();
+    eventHandler?.stop();
+    // 给清理操作一点时间，然后退出
+    setTimeout(() => process.exit(0), 500);
+  };
   process.on('SIGINT', cleanup);
   process.on('SIGTERM', cleanup);
 }

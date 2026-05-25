@@ -18,6 +18,9 @@ const log = createLogger('EventHandler');
 
 export class OpenCodeEventHandler {
   private isRunning = false;
+  private reconnectDelay = 5000; // 重连间隔 5 秒
+  private maxReconnectDelay = 60000; // 最大重连间隔 60 秒
+  private reconnectAttempts = 0;
 
   constructor(
     private sessionManager: SessionManager,
@@ -29,6 +32,45 @@ export class OpenCodeEventHandler {
 
   async start(eventStream: ReadableStream<Uint8Array>) {
     this.isRunning = true;
+    this.reconnectAttempts = 0;
+    await this.runLoop(eventStream);
+  }
+
+  /** 带自动重连的 SSE 读取循环 */
+  private async runLoop(eventStream: ReadableStream<Uint8Array>) {
+    while (this.isRunning) {
+      try {
+        await this.readStream(eventStream);
+      } catch (err) {
+        if (!this.isRunning) break;
+        log.error('SSE 连接断开', { err });
+      }
+
+      if (!this.isRunning) break;
+
+      // 指数退避重连
+      const delay = Math.min(this.reconnectDelay * (2 ** this.reconnectAttempts), this.maxReconnectDelay);
+      this.reconnectAttempts++;
+      log.info(`SSE ${delay / 1000}秒后重连...`);
+      await this.sleep(delay);
+
+      if (!this.isRunning) break;
+
+      try {
+        const stream = await this.opencode.subscribeEvents();
+        this.reconnectAttempts = 0;
+        eventStream = stream;
+      } catch (err) {
+        log.error('SSE 重连失败', { err });
+      }
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private async readStream(eventStream: ReadableStream<Uint8Array>) {
     const reader = eventStream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -48,8 +90,8 @@ export class OpenCodeEventHandler {
           await this.processEvent(raw);
         }
       }
-    } catch (err) {
-      log.error('SSE error', { err });
+    } finally {
+      reader.releaseLock();
     }
   }
 

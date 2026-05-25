@@ -1,0 +1,17 @@
+# 排除 source map 文件（避免暴露源码路径）
+*.map
+
+# 排除源码（只发布 dist）
+src/
+tsconfig.json
+
+# 排除测试和文档
+tests/
+*.test.ts
+*.spec.ts
+README.md
+
+# 排除本地配置
+.env
+.env.*
+*.log

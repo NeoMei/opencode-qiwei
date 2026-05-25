@@ -33,12 +33,20 @@ export default function QiweiPlugin(_ctx: any) {
         const opencode = new OpenCodeClient({ baseUrl: config.opencodeUrl });
         const sessionManager = new SessionManager();
 
-        wsClient = new WSClient({
+        const wsClientOptions: any = {
           botId: config.botId,
           secret: config.secret,
           reconnectInterval: 2000,
           maxReconnectAttempts: -1,
-        });
+          heartbeatInterval: 30000,
+        };
+        if (config.scene !== undefined) {
+          wsClientOptions.scene = config.scene;
+        }
+        if (config.plugVersion) {
+          wsClientOptions.plug_version = config.plugVersion;
+        }
+        wsClient = new WSClient(wsClientOptions);
 
         const messageHandler = new MessageHandler(config, sessionManager, wsClient, opencode);
 
@@ -47,10 +55,11 @@ export default function QiweiPlugin(_ctx: any) {
           opencode.subscribeEvents().then(s => eventHandler!.start(s)).catch(() => {});
         }
 
-        wsClient.on('message.text', f => messageHandler.handleMessage(f).catch(() => {}));
-        wsClient.on('message.image', f => messageHandler.handleImageMessage(f).catch(() => {}));
-        wsClient.on('event.enter_chat', f => messageHandler.handleEnterChat(f).catch(() => {}));
-        wsClient.on('event.template_card_event', f => messageHandler.handleCardEvent(f).catch(() => {}));
+        wsClient.on('message.text', f => messageHandler.handleMessage(f).catch(e => log.error('text', e)));
+        wsClient.on('message.image', f => messageHandler.handleImageMessage(f).catch(e => log.error('image', e)));
+        wsClient.on('message.mixed', f => messageHandler.handleMixedMessage(f).catch(e => log.error('mixed', e)));
+        wsClient.on('event.enter_chat', f => messageHandler.handleEnterChat(f).catch(e => log.error('enter', e)));
+        wsClient.on('event.template_card_event', f => messageHandler.handleCardEvent(f).catch(e => log.error('card', e)));
 
         wsClient.connect();
         log.info('插件已启动');

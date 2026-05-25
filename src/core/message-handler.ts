@@ -56,6 +56,7 @@ export class MessageHandler {
 
     const newSession = this.sessionManager.getOrCreate(chatId, chatType);
     this.sessionManager.setStatus(chatId, 'busy');
+    this.sessionManager.setLastFrame(chatId, frame); // 存储 frame 供 notifyPending 使用
 
     // 创建 OpenCode 会话（如果还没有）
     if (!newSession.opencodeId) {
@@ -71,14 +72,16 @@ export class MessageHandler {
       }
     }
 
+    const streamId = `s_${Date.now()}`;
+    this.streams.set(newSession.id, { frame, streamId, lastContent: '' });
+
     try {
-      const streamId = `s_${Date.now()}`;
       await this.wsClient.replyStream(frame, streamId, '...', false);
 
       // 调用 OpenCode API 并等待同步回复
       const response = await this.opencode.sendPrompt(newSession.opencodeId!, text);
       const reply = response?.parts?.find((p: any) => p.type === 'text')?.text || '';
-      
+
       if (reply) {
         await this.wsClient.replyStream(frame, streamId, reply, true);
       } else {
@@ -86,7 +89,8 @@ export class MessageHandler {
       }
     } catch (err) {
       log.error('消息处理失败', { err });
-      await this.wsClient.replyStream(frame, `e_${Date.now()}`, '抱歉，处理出错了 😢', true);
+      await this.wsClient.replyStream(frame, streamId, '抱歉，处理出错了 😢', true);
+    } finally {
       this.streams.delete(newSession.id);
       this.sessionManager.setStatus(chatId, 'idle');
     }
@@ -201,12 +205,13 @@ export class MessageHandler {
     const session = this.sessionManager.getByChatId(chatId);
     if (!session) return;
 
-    // 复用当前 stream 的 frame，如果没有则找一个
+    // 复用当前 stream 的 frame，如果没有则使用 session 存储的 frame
     let frame = this.streams.get(session.id)?.frame;
     if (!frame) {
-      // 没有活跃流，创建一个最小 frame 用于回复
-      // 注意：企微 SDK 可能不支持没有原始 frame 的回复，这里仅作兜底
-      log.warn('No active stream frame for notifyPending, message may not be delivered');
+      frame = session.lastFrame;
+    }
+    if (!frame) {
+      log.warn('No frame available for notifyPending, message may not be delivered', { chatId });
       return;
     }
 
@@ -270,6 +275,10 @@ export class MessageHandler {
     const items = msg.mixed?.msg_item || [];
     const textParts = items.filter(i => i.msgtype === 'text').map(i => i.text?.content || '').join(' ');
     // 提取文本部分，当作普通文本处理
+    if (textParts.trim()) {
+      const textFrame = { ...frame, body: { ...msg, text: { content: textParts } } } as unknown as WsFrame<TextMessage>;
+      await this.handleMessage(textFrame);
+    }
   }
 
   /** 进入会话事件 */

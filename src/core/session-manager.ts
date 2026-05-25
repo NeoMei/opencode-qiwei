@@ -16,6 +16,7 @@ interface Session {
   status: 'idle' | 'busy';
   lastActivity: number;
   pendingInteraction?: PendingInteraction;
+  lastFrame?: any; // 存储最近的消息 frame，用于 notifyPending
 }
 
 export class SessionManager {
@@ -24,6 +25,9 @@ export class SessionManager {
   private opencodeToSession = new Map<string, string>(); // opencodeId → sessionId
 
   getOrCreate(chatId: string, chatType: 'single' | 'group'): Session {
+    // 定期清理过期会话，防止内存泄漏
+    this.cleanExpired();
+
     const existing = this.chatToSession.get(chatId);
     if (existing) {
       const session = this.sessions.get(existing)!;
@@ -80,6 +84,11 @@ export class SessionManager {
   clearPendingInteraction(chatId: string): void {
     const session = this.getByChatId(chatId);
     if (session) session.pendingInteraction = undefined;
+  }
+
+  setLastFrame(chatId: string, frame: any): void {
+    const session = this.getByChatId(chatId);
+    if (session) session.lastFrame = frame;
   }
 
   /** 清理过期会话 (1小时无活动) */
